@@ -10,6 +10,7 @@
 #import "SDWebImageDecoder.h"
 #import <CommonCrypto/CommonDigest.h>
 #import "SDWebImageDecoder.h"
+#import "SDWebImageManager.h"
 #import <mach/mach.h>
 #import <mach/mach_host.h>
 
@@ -51,7 +52,8 @@ static natural_t get_free_memory(void)
     if ((self = [super init]))
     {
         // Init the memory cache
-        memCache = [[NSMutableDictionary alloc] init];
+        memCache = [[NSCache alloc] init];
+		[memCache setTotalCostLimit:100 * 200 * 200];
 
         // Init the disk cache
         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
@@ -183,11 +185,7 @@ static natural_t get_free_memory(void)
 
     if (image)
     {
-        if (get_free_memory() < minFreeMemLeft)
-        {
-            [memCache removeAllObjects];
-        }    
-        [memCache setObject:image forKey:key];
+        [memCache setObject:image forKey:key cost:image.size.width * image.size.height];
 
         if ([delegate respondsToSelector:@selector(imageCache:didFindImage:forKey:userInfo:)])
         {
@@ -217,8 +215,11 @@ static natural_t get_free_memory(void)
         {
             image = decodedImage;
         }
-
-        [mutableArguments setObject:image forKey:@"image"];
+		
+		NSNumber* options = [arguments objectForKey:@"options"];
+		BOOL delaySetImage = [options intValue] & SDWebImageManualSetImage;
+		if (!delaySetImage)
+			[mutableArguments setObject:image forKey:@"image"];
     }
 
     [self performSelectorOnMainThread:@selector(notifyDelegate:) withObject:mutableArguments waitUntilDone:NO];
@@ -232,12 +233,8 @@ static natural_t get_free_memory(void)
     {
         return;
     }
-    
-    if (get_free_memory() < minFreeMemLeft)
-    {
-        [memCache removeAllObjects];
-    }
-    [memCache setObject:image forKey:key];
+
+    [memCache setObject:image forKey:key cost:image.size.width * image.size.height];
 
     if (toDisk)
     {
@@ -288,11 +285,7 @@ static natural_t get_free_memory(void)
         image = SDScaledImageForPath(key, [NSData dataWithContentsOfFile:[self cachePathForKey:key]]);
         if (image)
         {
-            if (get_free_memory() < minFreeMemLeft)
-            {
-                [memCache removeAllObjects];
-            }
-            [memCache setObject:image forKey:key];
+            [memCache setObject:image forKey:key cost:image.size.width * image.size.height];
         }
     }
 
@@ -418,20 +411,22 @@ static natural_t get_free_memory(void)
 
 - (int)getMemorySize
 {
-    int size = 0;
-    
-    for(id key in [memCache allKeys])
-    {
-        UIImage *img = [memCache valueForKey:key];
-        size += [UIImageJPEGRepresentation(img, 0) length];
-    };
-    
-    return size;
+	return [memCache totalCostLimit];
+//    int size = 0;
+//    
+//    for(id key in [memCache allKeys])
+//    {
+//        UIImage *img = [memCache valueForKey:key];
+//        size += [UIImageJPEGRepresentation(img, 0) length];
+//    };
+//    
+//    return size;
 }
 
 - (int)getMemoryCount
 {
-    return [[memCache allKeys] count];
+	return [memCache totalCostLimit];
+//    return [[memCache allKeys] count];
 }
 
 @end
